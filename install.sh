@@ -2,78 +2,65 @@
 
 set -e
 
-REPO="https://raw.githubusercontent.com/amirpronk3/tgbackup/main"
 APP_DIR="/opt/tgbackup"
-BOT_FILE="$APP_DIR/bot.py"
+REPO="https://raw.githubusercontent.com/amirpronk3/tgbackup/main"
 
-echo "📦 Installing Telegram Backup Bot (PRODUCTION MODE)..."
-
-# ---------- dependencies ----------
+echo "🚀 Installing TGBackup Enterprise..."
 
 apt update -y
 apt install -y python3 python3-pip cron curl
 
-pip3 install --upgrade python-telegram-bot==20.7
+pip3 install --upgrade python-telegram-bot==20.7 requests
 
-# ---------- directories ----------
+mkdir -p $APP_DIR/backups
+mkdir -p $APP_DIR/logs
 
-mkdir -p "$APP_DIR"
-mkdir -p "$APP_DIR/backups"
-
-# ---------- check install ----------
-
-if [ -f "$BOT_FILE" ]; then
-echo "♻️ Existing installation detected → UPDATE MODE"
-else
-echo "🆕 Fresh installation"
-fi
-
-# ---------- token ----------
+# ---------- TOKEN ----------
 
 echo "Enter Bot Token:"
 read -r TOKEN
 
-# ---------- download bot ----------
+echo "BOT_TOKEN=$TOKEN" > $APP_DIR/.env
+echo "ADMIN_ID=1057813886" >> $APP_DIR/.env
 
-echo "⬇️ Downloading bot.py..."
-curl -fsSL "$REPO/bot.py" -o "$BOT_FILE"
+# ---------- DOWNLOAD BOT ----------
 
-# ---------- inject token safely ----------
+curl -fsSL $REPO/bot.py -o $APP_DIR/bot.py
 
-sed -i "s/**BOT_TOKEN**/$TOKEN/g" "$BOT_FILE"
-
-# ---------- systemd ----------
+# ---------- SYSTEMD ----------
 
 cat > /etc/systemd/system/tgbackup.service <<EOF
 [Unit]
-Description=Telegram Backup Bot
+Description=TGBackup Enterprise Agent
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 WorkingDirectory=$APP_DIR
-ExecStart=/usr/bin/python3 $BOT_FILE
+EnvironmentFile=$APP_DIR/.env
+ExecStart=/usr/bin/python3 $APP_DIR/bot.py
 Restart=always
 RestartSec=5
+StandardOutput=append:$APP_DIR/logs/bot.log
+StandardError=append:$APP_DIR/logs/error.log
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-# ---------- enable service ----------
-
 systemctl daemon-reload
 systemctl enable tgbackup
 systemctl restart tgbackup
 
-# ---------- cron ----------
+# ---------- CRON ----------
 
 systemctl enable cron
 systemctl restart cron
 
-(crontab -l 2>/dev/null | grep -v "bot.py autobackup" ; echo "0 */6 * * * /usr/bin/python3 $BOT_FILE autobackup >/dev/null 2>&1") | crontab -
+(crontab -l 2>/dev/null | grep -v "tgbackup autobackup" ; echo "0 */6 * * * /usr/bin/python3 $APP_DIR/bot.py autobackup >> $APP_DIR/logs/cron.log 2>&1") | crontab -
 
-echo "✅ Installation completed (PRODUCTION READY)"
+echo "✅ Enterprise installation completed"
 echo "🤖 Commands: /start /status /backup"
-echo "⏰ Auto backup: every 6 hours"
+echo "📦 Auto backup: every 6 hours"
+echo "⚡ Systemd + Cron enabled"
