@@ -6,8 +6,10 @@ from datetime import datetime
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-ADMIN_ID = 1057813886
-BOT_TOKEN = "**BOT_TOKEN**"
+# ---------- CONFIG ----------
+
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 
 BACKUP_PATHS = [
 "/root",
@@ -20,6 +22,8 @@ BACKUP_DIR = "/opt/tgbackup/backups"
 RETENTION = 5
 
 os.makedirs(BACKUP_DIR, exist_ok=True)
+
+# ---------- CORE ----------
 
 def cleanup():
 files = sorted(
@@ -52,11 +56,13 @@ file = create_backup()
 with open(file, "rb") as f:
 await app.bot.send_document(chat_id=chat_id, document=f)
 
+# ---------- COMMANDS ----------
+
 START_TEXT = """
-🤖 Backup Bot Active
+🤖 TGBackup Enterprise
 
 /start - info
-/status - status
+/status - health
 /backup - manual backup
 """
 
@@ -68,7 +74,7 @@ await update.message.reply_text(START_TEXT)
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 if update.effective_user.id != ADMIN_ID:
 return
-await update.message.reply_text("🟢 Bot is running")
+await update.message.reply_text("🟢 Online & Running")
 
 async def backup(update: Update, context: ContextTypes.DEFAULT_TYPE):
 if update.effective_user.id != ADMIN_ID:
@@ -77,9 +83,27 @@ await update.message.reply_text("⏳ Creating backup...")
 await send_backup(context.application, update.effective_chat.id)
 await update.message.reply_text("✅ Done")
 
+# ---------- CRON MODE ----------
+
 async def cron_backup():
 app = ApplicationBuilder().token(BOT_TOKEN).build()
 await send_backup(app, ADMIN_ID)
+
+# ---------- STARTUP BACKUP ----------
+
+async def startup_backup():
+app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+```
+await app.bot.send_message(
+    chat_id=ADMIN_ID,
+    text="🟢 Server Started\n📦 Running startup backup..."
+)
+
+await send_backup(app, ADMIN_ID)
+```
+
+# ---------- MAIN ----------
 
 def run():
 app = ApplicationBuilder().token(BOT_TOKEN).build()
@@ -95,9 +119,14 @@ app.run_polling(drop_pending_updates=True)
 if **name** == "**main**":
 
 ```
-if len(sys.argv) > 1 and sys.argv[1] == "autobackup":
-    asyncio.run(cron_backup())
-    sys.exit(0)
+if len(sys.argv) > 1:
+    if sys.argv[1] == "autobackup":
+        asyncio.run(cron_backup())
+        sys.exit(0)
+
+    if sys.argv[1] == "startup":
+        asyncio.run(startup_backup())
+        sys.exit(0)
 
 run()
 ```
