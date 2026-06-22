@@ -6,127 +6,103 @@ from datetime import datetime
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-# ---------- CONFIG ----------
-
+# ---------- SAFE CONFIG ----------
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
-
-BACKUP_PATHS = [
-"/root",
-"/etc/x-ui",
-"/var/lib/marzban",
-"/opt/marzban"
-]
 
 BACKUP_DIR = "/opt/tgbackup/backups"
 RETENTION = 5
 
+BACKUP_PATHS = [
+    "/root",
+    "/etc/x-ui",
+    "/var/lib/marzban",
+    "/opt/marzban"
+]
+
 os.makedirs(BACKUP_DIR, exist_ok=True)
 
-# ---------- CORE ----------
-
-def cleanup():
-files = sorted(
-[os.path.join(BACKUP_DIR, f) for f in os.listdir(BACKUP_DIR)],
-key=os.path.getctime
-)
-while len(files) > RETENTION:
-try:
-os.remove(files[0])
-files.pop(0)
-except:
-break
-
+# ---------- CORE SAFE BACKUP ----------
 def create_backup():
-now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-path = f"{BACKUP_DIR}/backup_{now}.tar.gz"
+    now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    file_path = f"{BACKUP_DIR}/backup_{now}.tar.gz"
 
-```
-with tarfile.open(path, "w:gz") as tar:
-    for p in BACKUP_PATHS:
-        if os.path.exists(p):
-            tar.add(p)
+    with tarfile.open(file_path, "w:gz") as tar:
+        for p in BACKUP_PATHS:
+            if os.path.exists(p):
+                tar.add(p)
 
-cleanup()
-return path
-```
+    files = sorted(
+        [os.path.join(BACKUP_DIR, f) for f in os.listdir(BACKUP_DIR)],
+        key=os.path.getctime
+    )
+
+    while len(files) > RETENTION:
+        try:
+            os.remove(files[0])
+            files.pop(0)
+        except:
+            break
+
+    return file_path
+
 
 async def send_backup(app, chat_id):
-file = create_backup()
-with open(file, "rb") as f:
-await app.bot.send_document(chat_id=chat_id, document=f)
+    file = create_backup()
+    with open(file, "rb") as f:
+        await app.bot.send_document(chat_id=chat_id, document=f)
+
 
 # ---------- COMMANDS ----------
-
 START_TEXT = """
-🤖 TGBackup Enterprise
+🤖 TGBackup Production
 
-/start - info
-/status - health
-/backup - manual backup
+/start
+/status
+/backup
 """
 
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-if update.effective_user.id != ADMIN_ID:
-return
-await update.message.reply_text(START_TEXT)
+    if update.effective_user.id != ADMIN_ID:
+        return
+    await update.message.reply_text(START_TEXT)
+
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-if update.effective_user.id != ADMIN_ID:
-return
-await update.message.reply_text("🟢 Online & Running")
+    if update.effective_user.id != ADMIN_ID:
+        return
+    await update.message.reply_text("🟢 Online")
+
 
 async def backup(update: Update, context: ContextTypes.DEFAULT_TYPE):
-if update.effective_user.id != ADMIN_ID:
-return
-await update.message.reply_text("⏳ Creating backup...")
-await send_backup(context.application, update.effective_chat.id)
-await update.message.reply_text("✅ Done")
+    if update.effective_user.id != ADMIN_ID:
+        return
+    await update.message.reply_text("⏳ Backup...")
+    await send_backup(context.application, update.effective_chat.id)
+    await update.message.reply_text("✅ Done")
+
 
 # ---------- CRON MODE ----------
+async def cron():
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    await send_backup(app, ADMIN_ID)
 
-async def cron_backup():
-app = ApplicationBuilder().token(BOT_TOKEN).build()
-await send_backup(app, ADMIN_ID)
 
-# ---------- STARTUP BACKUP ----------
+# ---------- ENTRY ----------
+def main():
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-async def startup_backup():
-app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("status", status))
+    app.add_handler(CommandHandler("backup", backup))
 
-```
-await app.bot.send_message(
-    chat_id=ADMIN_ID,
-    text="🟢 Server Started\n📦 Running startup backup..."
-)
+    app.run_polling(drop_pending_updates=True)
 
-await send_backup(app, ADMIN_ID)
-```
 
-# ---------- MAIN ----------
-
-def run():
-app = ApplicationBuilder().token(BOT_TOKEN).build()
-
-```
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("status", status))
-app.add_handler(CommandHandler("backup", backup))
-
-app.run_polling(drop_pending_updates=True)
-```
-
-if **name** == "**main**":
-
-```
-if len(sys.argv) > 1:
-    if sys.argv[1] == "autobackup":
-        asyncio.run(cron_backup())
+if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "autobackup":
+        asyncio.run(cron())
         sys.exit(0)
 
-    if sys.argv[1] == "startup":
-        asyncio.run(startup_backup())
-        sys.exit(0)
-
-run()
-```
+    main()
